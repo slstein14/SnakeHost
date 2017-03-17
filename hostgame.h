@@ -5,8 +5,6 @@
 #include <QTcpServer>
 #include "renderobject.h"
 #include <QTimer>
-#include <QKeyEvent>
-#include <QLabel>
 #include <vector>
 #include <time.h>
 using namespace std;

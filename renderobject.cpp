@@ -1,5 +1,4 @@
 #include "renderobject.h"
-#include <qdebug.h>
 
 RenderObject::RenderObject()
 {
