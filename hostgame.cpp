@@ -5,8 +5,8 @@ HostGame::HostGame(QWidget *parent) :
 {
     gameStarted=false;
 
+    //Server object manages socket connections
     server = new QTcpServer(this);
-    // update to use this->ipAddress for localhost?
     server->listen(QHostAddress::Any, 5300);
     connect(server, SIGNAL(newConnection()), this, SLOT(newConnection()));
 
@@ -34,25 +34,30 @@ HostGame::HostGame(QWidget *parent) :
     this->moveApple();
     appleEaten=false;
 
+    //Tally how many players have joined
     connectedPlayers=0;
 }
 
 HostGame::~HostGame()
 {
-
+//Unused delete function
 }
 
-void HostGame::setHostIP(QString address){ hostIP = address; }
+void HostGame::setHostIP(QString address){ hostIP = address; }//Unused at this time
 
 void HostGame::newConnection()
-{
+{//Triggered each time a client connects
     while (server->hasPendingConnections()){
+        //Caps clients at 8
         if(socket.size()<8){
             qDebug()<<"Has pending connections";
+            //Creates a socket object and adds it to the array
             QTcpSocket *temp=server->nextPendingConnection();
             socket.push_back(temp);
+            //Connects the socket to read and disconnect functions
             connect(temp, SIGNAL(readyRead()),this, SLOT(readyRead()));
             connect(temp, SIGNAL(disconnected()),this, SLOT(Disconnected()));
+            //Adds player to the connection list and sets its starting location
             connectedPlayers++;
             this->initSnake();
         }
@@ -62,7 +67,7 @@ void HostGame::newConnection()
 
 void HostGame::initSnake()
 {
-    //initialize snakes
+    //initialize snake coordinates as each player connects
     qDebug()<<"Init Snake"<<connectedPlayers;
     vector<RenderObject*>segments;
 
@@ -140,6 +145,7 @@ void HostGame::initSnake()
     }
     snakes.push_back(segments);
 
+    //Sets other player variables
     connected.push_back(false);
     ready.push_back(false);
     direction.push_back(2);
@@ -149,7 +155,7 @@ void HostGame::initSnake()
 }
 
 void HostGame::Disconnected()
-{
+{//When one player disconnects, the game ends
     for(int i=0;i<socket.size();i++){
         socket.at(i)->disconnectFromHost();
     }
@@ -160,7 +166,10 @@ void HostGame::Disconnected()
 
 void HostGame::readyRead()
 {
+    //Triggers when the client sends data
     qDebug()<<"readyRead";
+
+    //Determines who sent the data
     QTcpSocket* pClient = static_cast<QTcpSocket*>(QObject::sender());
     int playerNum=0;
     for(int i=0;i<socket.size();i++){
@@ -169,12 +178,19 @@ void HostGame::readyRead()
         }
     }
     qDebug()<<"Player Number "<<playerNum;
+
+    //Reads the data
     QString data;
     data = pClient->readAll();
-    qDebug()<<data<<gameStarted;
+    //qDebug()<<data<<gameStarted;
+
     if(!connected.at(playerNum)){
+        //If the player is connecting for the first time
+        //Indicates it has connected
         connected.at(playerNum)=true;
         qDebug() << "Player" << data << "Has Joined";
+
+        //Tell the client which player number it is
         QByteArray sendConnected;
            sendConnected.append("CONNECTED;");
            qDebug() << pClient->state();
@@ -192,6 +208,7 @@ void HostGame::readyRead()
                qDebug() <<"Connected"<< pClient->errorString();
            }
 
+           //Send the full updated player list to all clients
            playerName.push_back(data);
            QByteArray sendPList;
            sendPList.append("PLAYERLIST");
@@ -213,22 +230,29 @@ void HostGame::readyRead()
            }
     }
     else if((!gameStarted)&&(snakes.size()>=2)){
+        //If there are at least 2 players and it hasn't started yet
         qDebug()<<data;
+        //Check if player 1 is starting the game
         if(data=="STARTGAME"){
             this->startGame();
         }
     }
     else if(gameStarted){
+        //If the game has already started, check what the client is sending
         QString command = data.split(";").first();
         if(command=="UPDATE"){
+            //The client is updating its movement direction
             QStringList dataPieces=data.split(";");
             QString dir=dataPieces.value(1);
+            //Can only be updated once per tick cycle
             if(newDirection.at(playerNum)==false){
                 direction.at(playerNum)=dir.toInt();
                 newDirection.at(playerNum)=true;
             }
         }
         else if(command=="READY"){
+            //The client is indicating it is ready to start the game
+            //Sets its initial direction
             QStringList dataPieces=data.split(";");
             QString dir=dataPieces.value(1);
             if(newDirection.at(playerNum)==false){
@@ -237,6 +261,7 @@ void HostGame::readyRead()
             }
             ready.at(playerNum)=true;
 
+            //If this is the last client to indicate it is ready, start the movement timer
             bool AllReady=true;
             for(int j=0;j<snakes.size();j++){
                 if(!ready.at(j)){
@@ -252,9 +277,9 @@ void HostGame::readyRead()
 
 void HostGame::updateField()
 {
-    //Renders the new snake location first
-    //Otherwise it looks like it takes an extra tick to eat apples and collide with walls
+    //Updates the location of each snake
     this->moveSnake();
+    //Indicates it has read the directions and new ones can be assigned
     for(int i=0;i<snakes.size();i++){
         newDirection.at(i)=false;
     }
@@ -262,9 +287,9 @@ void HostGame::updateField()
     if(appleEaten){
         this->moveApple();
     }
-    //Redraws the entire screen at once
-    //this->update();
 
+    //Sends the new render data to the client
+    //Starts with the apple coordinates
         QByteArray sendUpdateData;
         sendUpdateData.append("UPDATE;APPLE;");
         QString temp=QString::number(apple->getXCoord());
@@ -274,6 +299,7 @@ void HostGame::updateField()
         sendUpdateData.append(temp);
         sendUpdateData.append(";");
 
+        //Creates a list of snake coordinates for all connected players
         for(int i=0;i<snakes.size();i++){
             if(!playerlost.at(i)){
                 sendUpdateData.append("SNAKE");
@@ -290,8 +316,9 @@ void HostGame::updateField()
                    sendUpdateData.append(";");
                 }
             }
-
         }
+
+        //Sends the coordinate list to all players
        for(int i=0;i<socket.size();i++){
            QTcpSocket* pClient = socket.at(i);
            if(pClient->state() == QAbstractSocket::ConnectedState)
@@ -310,8 +337,11 @@ void HostGame::updateField()
 void HostGame::moveSnake()
 {//Moves the snake across the screen
 
+    //Runs for each player
     for(int i=0;i<snakes.size();i++){
+        //If the player is out, it has no coodinates to update
         if(!playerlost.at(i)){
+            //makes a pointer to whichever snake is being updates
             vector<RenderObject*> moveSnake = snakes.at(i);
 
             //Stores the last segment location so it knows where to add new segments
@@ -352,6 +382,7 @@ void HostGame::moveSnake()
                 newseg->setYCoord(backY1);
                 moveSnake.push_back(newseg);
                 //Increases the player score
+                //Score isn't really doing anything right now
                 score.at(i)++;
             }
 
@@ -367,9 +398,11 @@ void HostGame::moveSnake()
             //Sets the new front segment location to indicate a snake is there
             matrix[(*(moveSnake.at(0))).getYCoord()][(*(moveSnake.at(0))).getXCoord()]=1;
 
+            //Makes sure the official vector gets all changes
             snakes.at(i)=moveSnake;
         }
         else if(snakes.at(i).size()>0){
+            //If the player has lost, makes sure all segments are removed and the coordinates are listed as empty
             vector<RenderObject*> moveSnake = snakes.at(i);
             for(int j=(moveSnake.size()-1);j>=0;j--){
                 matrix[(*(moveSnake.at(j))).getYCoord()][(*(moveSnake.at(j))).getXCoord()]=0;
@@ -380,6 +413,7 @@ void HostGame::moveSnake()
     }
 
     int losers=0;
+    //Check how many snakes have died
     for(int i=0;i<snakes.size();i++){
         if(playerlost.at(i)){
             qDebug()<<"Loser "<<i;
@@ -387,6 +421,7 @@ void HostGame::moveSnake()
         }
     }
     if(losers>snakes.size()-1){
+        //If all snakes have died, stop the game and notify all clients that nobody won
         timer->stop();
         QByteArray sendData;
            sendData.append("END;NOWINNER");
@@ -405,6 +440,7 @@ void HostGame::moveSnake()
            }
     }
     else if(losers==(snakes.size()-1)){
+        //If only one snake is left, stop the game and notify all clients who the winner is
         for(int i=0;i<snakes.size();i++){
             if(!playerlost.at(i)){
                 //Stops all objects from moving in the background
@@ -453,7 +489,7 @@ void HostGame::moveApple()
 }
 
 void HostGame::resetVars()
-{
+{//Resets all the variables so the server doesn't have to restart to make a new game when one ends
     for(int i=0;i<48;i++){
         for(int j=0;j<64;j++){
             if(0==j||0==i||63==j||47==i){
@@ -484,7 +520,7 @@ void HostGame::resetVars()
 }
 
 void HostGame::startGame()
-{
+{//Tells all clients the game is starting and what player number they are
     for(int i=0;i<socket.size();i++){
         QTcpSocket* pClient = socket.at(i);
         if(connected.at(0)&&connected.at(1)){

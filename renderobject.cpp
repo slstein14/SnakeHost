@@ -11,19 +11,19 @@ RenderObject::RenderObject()
 void RenderObject::setXCoord(int x)
 {
     posX=x;
-}
+}//Mutator
 
 int RenderObject::getXCoord()
 {
     return posX;
-}
+}//Accessor
 
 void RenderObject::setYCoord(int y)
 {
     posY=y;
-}
+}//Mutator
 
 int RenderObject::getYCoord()
 {
     return posY;
-}
+}//Accessor
